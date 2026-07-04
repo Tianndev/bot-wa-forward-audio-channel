@@ -32,7 +32,7 @@ async function getWAVersion() {
     const res = await fetch('https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json');
     const { version } = await res.json();
     if (Array.isArray(version)) return version;
-  } catch {}
+  } catch { }
   return [2, 3000, 1035194821];
 }
 
