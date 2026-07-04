@@ -62,7 +62,7 @@ bot-wa-forward-audio-channel/
 │
 ├── index.js                 Entry point — main bot logic
 ├── ecosystem.config.js      PM2 configuration
-├── config.json              Bot configuration (gitignored)
+├── config.json              Bot configuration
 ├── package.json             npm manifest and scripts
 │
 ├── auth_info_baileys/       WhatsApp session files (auto-generated, gitignored)
@@ -250,7 +250,7 @@ Example output:
 > Never commit the `auth_info_baileys/` folder. It contains your WhatsApp session credentials and is excluded by `.gitignore` by default.
 
 > [!WARNING]
-> Never commit `config.json` to a public repository. It contains a private phone number and is excluded by `.gitignore` by default.
+> Be careful not to expose sensitive data in `config.json` if this repository is public. Consider using a placeholder number instead of your real number.
 
 > [!NOTE]
 > If the bot is logged out, delete the `auth_info_baileys/` directory and re-run `node index.js` to scan a new QR code.

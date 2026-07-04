@@ -11,8 +11,6 @@ auth_info_baileys/
 *.session
 *.session-journal
 
-config.json
-
 logs/
 *.log
 pm2-error.log
