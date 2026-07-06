@@ -24,13 +24,12 @@
 
 | Feature | Description |
 |---|---|
-| Auto Forward Audio | Receive audio, select a channel, bot sends it as a PTT voice note |
+| Auto Forward Audio | Receive audio, select a channel, bot forwards it as a PTT voice note |
 | Automatic Format Conversion | MP3, M4A, MP4, OGG, and all FFmpeg-supported formats are converted to OGG Opus |
 | Multi-Channel Support | Choose from all WhatsApp Channels followed by the bot account |
-| Owner Restriction | Restrict access to a specific number (optional) |
+| Owner Restriction | Restrict access to a specific number via `.env` (optional) |
 | Auto Read | Incoming messages are marked as read automatically |
-| Auto Reconnect | Automatically reconnects if the connection drops |
-| PM2 Ready | Production-ready deployment with PM2 and ecosystem config |
+| PM2 Managed | Single-instance, auto-restart with exponential backoff via PM2 |
 | Structured Logging | Formatted timestamped logs for easy monitoring |
 
 ---
@@ -62,7 +61,8 @@ bot-wa-forward-audio-channel/
 │
 ├── index.js                 Entry point — main bot logic
 ├── ecosystem.config.js      PM2 configuration
-├── config.json              Bot configuration
+├── .env                     Bot configuration (gitignored, copy from .env.example)
+├── .env.example             Configuration template
 ├── package.json             npm manifest and scripts
 │
 ├── auth_info_baileys/       WhatsApp session files (auto-generated, gitignored)
@@ -118,17 +118,22 @@ No manual FFmpeg installation is needed — it is bundled via `ffmpeg-static`.
 
 ### 3. Configure the Bot
 
-Create or edit `config.json`:
+Copy the configuration template:
 
-```json
-{
-  "ownerNumber": "628xxxxxxxxxx"
-}
+```bash
+cp .env.example .env
+nano .env
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `ownerNumber` | `string` | No | The WhatsApp number allowed to use the bot (format: `628xxx`). Leave empty `""` to allow everyone. |
+Edit `.env`:
+
+```env
+OWNER_NUMBER=628xxxxxxxxxx
+```
+
+| Variable | Required | Description |
+|---|---|---|
+| `OWNER_NUMBER` | No | The WhatsApp number allowed to use the bot (format: `628xxx`). Leave empty to allow everyone. |
 
 ### 4. First-Time Login (QR Scan)
 
@@ -136,9 +141,11 @@ Create or edit `config.json`:
 node index.js
 ```
 
-Scan the QR code shown in the terminal using **WhatsApp > Linked Devices > Link a Device**.
+Scan the QR code shown in the terminal via **WhatsApp > Linked Devices > Link a Device**.
 
-Once connected, press `Ctrl+C`. The session is saved to `auth_info_baileys/`.
+Once the `CONNECTED` log appears, press `Ctrl+C`. The session is saved to `auth_info_baileys/`.
+
+> ⚠️ **Do this only once.** After the QR is scanned, always use PM2 going forward.
 
 ### 5. Run with PM2
 
@@ -193,12 +200,10 @@ npm install -g pm2
 git clone https://github.com/Tianndev/bot-wa-forward-audio-channel.git
 cd bot-wa-forward-audio-channel
 npm install
-
-nano config.json
-
+cp .env.example .env
+nano .env
 node index.js
-
-pm2 start ecosystem.config.js
+npm run pm2:start
 pm2 save
 pm2 startup
 ```
@@ -212,9 +217,10 @@ pm2 startup
 | `npm run pm2:start` | Start the bot via PM2 |
 | `npm run pm2:stop` | Stop the bot |
 | `npm run pm2:restart` | Restart the bot |
+| `npm run pm2:reload` | Reload without downtime |
 | `npm run pm2:logs` | Stream live logs |
 | `npm run pm2:delete` | Remove from PM2 |
-| `pm2 status` | View all running processes |
+| `npm run pm2:status` | View all running processes |
 
 ---
 
@@ -238,7 +244,7 @@ Example output:
 [01:11:01] CONVERT   | from=audio/mpeg to ogg/opus
 [01:11:02] PENDING   | from=628yyy@s.whatsapp.net | waiting for channel selection
 [01:11:05] FORWARD   | success | target=120363xxx@newsletter
-[01:12:00] DISCONNECT| code=408 | reconnect=true
+[01:12:00] DISCONNECT| code=408 | loggedOut=false
 [01:12:05] BOOT      | connecting...
 ```
 
@@ -250,13 +256,13 @@ Example output:
 > Never commit the `auth_info_baileys/` folder. It contains your WhatsApp session credentials and is excluded by `.gitignore` by default.
 
 > [!WARNING]
-> Be careful not to expose sensitive data in `config.json` if this repository is public. Consider using a placeholder number instead of your real number.
+> Never commit the `.env` file. It is already gitignored. Use `.env.example` as a safe template to share.
 
 > [!NOTE]
-> If the bot is logged out, delete the `auth_info_baileys/` directory and re-run `node index.js` to scan a new QR code.
+> If the bot is logged out, `auth_info_baileys/` is deleted automatically. Run `node index.js` to scan a new QR, then switch back to PM2.
 
 > [!NOTE]
-> Audio is held in memory temporarily during the channel selection phase and is cleared immediately after forwarding. No audio files are written to disk.
+> Audio is held in memory temporarily during channel selection and discarded immediately after forwarding. No audio files are written to disk.
 
 ---
 
@@ -267,9 +273,10 @@ Example output:
 | No channels listed | Make sure the bot's WA account follows at least one WhatsApp Channel |
 | QR code does not appear | Delete `auth_info_baileys/` and restart |
 | `Error: download failed` | Check internet connection and restart the bot |
-| Bot does not respond to audio | Verify `ownerNumber` in `config.json` or leave it empty to allow all |
-| Audio conversion fails | Ensure `npm install` completed without errors |
+| Bot does not respond to audio | Check `OWNER_NUMBER` in `.env`, or leave it empty to allow everyone |
+| Audio conversion fails | Make sure `npm install` completed without errors |
 | PM2 does not auto-start on reboot | Run `pm2 startup` and follow the printed instructions |
+| Bot loops disconnect (code 440) | Two instances running — never run `node index.js` while PM2 is active |
 
 ---
 

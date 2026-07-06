@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -18,14 +20,7 @@ const log = (msg) => console.log(`[${new Date().toLocaleTimeString('en-GB', { ho
 
 const pendingAudio = new Map();
 
-function readConfig() {
-  try {
-    const p = path.join(__dirname, 'config.json');
-    return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf-8')) : {};
-  } catch {
-    return {};
-  }
-}
+const OWNER_NUMBER = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
 
 async function getWAVersion() {
   try {
@@ -58,12 +53,9 @@ function buildChannelMenu(newsletters) {
 }
 
 async function handleAudio(sock, m, from, audioDetails, newsletters) {
-  const { ownerNumber } = readConfig();
-
-  if (ownerNumber?.trim()) {
+  if (OWNER_NUMBER) {
     const sender = from.split('@')[0];
-    const owner = ownerNumber.replace(/[^0-9]/g, '');
-    if (!sender.includes(owner)) return;
+    if (!sender.includes(OWNER_NUMBER)) return;
   }
 
   const menu = buildChannelMenu(newsletters);
@@ -131,9 +123,13 @@ async function startBot() {
     if (qr) log('QR | scan to connect');
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
-      const reconnect = code !== DisconnectReason.loggedOut;
-      log(`DISCONNECT | code=${code} | reconnect=${reconnect}`);
-      if (reconnect) startBot();
+      const isLoggedOut = code === DisconnectReason.loggedOut;
+      log(`DISCONNECT | code=${code} | loggedOut=${isLoggedOut}`);
+      if (isLoggedOut) {
+        log('LOGOUT | clearing auth and exiting...');
+        fs.rmSync(path.join(__dirname, 'auth_info_baileys'), { recursive: true, force: true });
+      }
+      process.exit(isLoggedOut ? 0 : 1);
     } else if (connection === 'open') {
       const { name, id } = sock.user;
       log(`CONNECTED | name=${name} | number=${id.split(':')[0]}`);
