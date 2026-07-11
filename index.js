@@ -15,6 +15,8 @@ const { Readable, PassThrough } = require('stream');
 const ffmpeg = require('fluent-ffmpeg');
 ffmpeg.setFfmpegPath(require('ffmpeg-static'));
 
+const FERDEV_APIKEY = process.env.FERDEV_APIKEY || '';
+
 const logger = pino({ level: 'silent' });
 const log = (msg) => console.log(`[${new Date().toLocaleTimeString('en-GB', { hour12: false })}] ${msg}`);
 
@@ -50,6 +52,50 @@ function buildChannelMenu(newsletters) {
   if (!entries.length) return null;
   const lines = entries.map(([, meta], i) => `${i + 1}. ${meta.name || 'Unnamed'}`);
   return { entries, text: 'Select target channel:\n\n' + lines.join('\n') + '\n\nReply with a number.' };
+}
+
+async function downloadBufferFromUrl(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} when fetching ${url}`);
+  const arrayBuf = await res.arrayBuffer();
+  return Buffer.from(arrayBuf);
+}
+
+async function handleTiktok(sock, m, from, link, newsletters) {
+  if (OWNER_NUMBER) {
+    const sender = from.split('@')[0];
+    if (!sender.includes(OWNER_NUMBER)) return;
+  }
+
+  const menu = buildChannelMenu(newsletters);
+  if (!menu) {
+    await sock.sendMessage(from, { text: 'No channels found. Make sure the bot account follows at least one WhatsApp Channel.' }, { quoted: m });
+    return;
+  }
+
+  await sock.readMessages([m.key]);
+  await sock.sendMessage(from, { text: 'Fetching TikTok audio, please wait...' }, { quoted: m });
+  log(`TIKTOK | from=${from} | link=${link}`);
+
+  const apiUrl = `https://api.ferdev.my.id/downloader/tiktok?link=${encodeURIComponent(link)}&apikey=${FERDEV_APIKEY}`;
+  const apiRes = await fetch(apiUrl);
+  if (!apiRes.ok) throw new Error(`TikTok API returned HTTP ${apiRes.status}`);
+  const json = await apiRes.json();
+
+  if (!json.success || !json.data?.music) throw new Error(json.message || 'TikTok API failed or no music URL');
+
+  const { title, music } = json.data;
+  log(`TIKTOK | title=${title} | downloading music...`);
+
+  let buffer = await downloadBufferFromUrl(music);
+  log(`TIKTOK | music downloaded | size=${buffer.length}`);
+
+  log(`CONVERT | tiktok music to ogg/opus`);
+  buffer = await toOggOpus(buffer);
+
+  pendingAudio.set(from, { buffer, entries: menu.entries, m });
+  await sock.sendMessage(from, { text: `${title || 'TikTok Audio'}\n\n${menu.text}` }, { quoted: m });
+  log(`PENDING | from=${from} | tiktok audio ready | waiting for channel selection`);
 }
 
 async function handleAudio(sock, m, from, audioDetails, newsletters) {
@@ -174,7 +220,22 @@ async function startBot() {
       }
 
       if (contentType === 'conversation' || contentType === 'extendedTextMessage') {
-        const text = content.conversation || content.extendedTextMessage?.text || '';
+        const text = (content.conversation || content.extendedTextMessage?.text || '').trim();
+
+        if (/^\.tt\s+\S+/i.test(text)) {
+          if (OWNER_NUMBER && !from.split('@')[0].includes(OWNER_NUMBER)) return;
+          const link = text.replace(/^\.tt\s+/i, '').trim();
+          try {
+            await handleTiktok(sock, m, from, link, newsletters);
+          } catch (err) {
+            log(`ERROR | tiktok | ${err.message}`);
+            pendingAudio.delete(from);
+            await sock.readMessages([m.key]);
+            await sock.sendMessage(from, { text: `Failed to process TikTok: ${err.message}` }, { quoted: m });
+          }
+          return;
+        }
+
         const handled = await handleSelection(sock, m, from, text);
         if (handled) return;
       }
